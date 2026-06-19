@@ -1,0 +1,87 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    font-family: '"Source Han Sans CN"', '"Noto Sans SC"', system-ui, sans-serif;
+  }
+  body {
+    @apply bg-gradient-to-br from-forest-50 via-white to-amber-50 min-h-screen;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply px-6 py-3 bg-forest-600 text-white rounded-xl font-semibold shadow-lg
+           hover:bg-forest-700 active:scale-[0.98] transition-all duration-200
+           disabled:bg-gray-300 disabled:cursor-not-allowed disabled:active:scale-100;
+  }
+
+  .btn-accent {
+    @apply px-6 py-3 bg-amber-600 text-white rounded-xl font-semibold shadow-lg
+           hover:bg-amber-700 active:scale-[0.98] transition-all duration-200;
+  }
+
+  .btn-outline {
+    @apply px-6 py-3 border-2 border-forest-600 text-forest-700 rounded-xl font-semibold
+           hover:bg-forest-50 active:scale-[0.98] transition-all duration-200;
+  }
+
+  .btn-danger {
+    @apply px-6 py-3 bg-red-500 text-white rounded-xl font-semibold shadow-lg
+           hover:bg-red-600 active:scale-[0.98] transition-all duration-200;
+  }
+
+  .btn-ghost {
+    @apply px-4 py-2 text-gray-600 rounded-lg hover:bg-gray-100 transition-colors;
+  }
+
+  .card {
+    @apply bg-white rounded-2xl shadow-md border border-gray-100;
+  }
+
+  .card-hover {
+    @apply card hover:shadow-xl hover:-translate-y-0.5 transition-all duration-300;
+  }
+
+  .input-field {
+    @apply w-full px-4 py-3 border-2 border-gray-200 rounded-xl text-lg
+           focus:border-forest-500 focus:ring-2 focus:ring-forest-200 outline-none
+           transition-all duration-200;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-700 mb-2;
+  }
+
+  .stat-value {
+    @apply text-3xl font-bold bg-gradient-to-r from-forest-700 to-forest-500 bg-clip-text text-transparent;
+  }
+}
+
+@layer utilities {
+  .text-shadow {
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: #2E7D32 #E8F5E9;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+    height: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: #E8F5E9;
+    border-radius: 3px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: #2E7D32;
+    border-radius: 3px;
+  }
+}
