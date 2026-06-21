@@ -18,6 +18,11 @@ coverage
 !.env.example
 .trae/
 
+data/*.db
+data/*.db-shm
+data/*.db-wal
+data/*.db-journal
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

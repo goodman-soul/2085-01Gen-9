@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Check, Lock, Phone, ShieldCheck, Mountain } from 'lucide-react';
@@ -8,8 +8,6 @@ import { Locker } from '@/types';
 import { useLockerStore } from '@/store/useLockerStore';
 import { useOrderStore } from '@/store/useOrderStore';
 import { usePricingStore } from '@/store/usePricingStore';
-import { useLogStore } from '@/store/useLogStore';
-import { findApplicablePricingRule } from '@/utils/pricing';
 import { formatCurrency, formatDuration } from '@/utils/billing';
 import { format } from 'date-fns';
 
@@ -24,14 +22,18 @@ export default function StorePage() {
   const [phone, setPhone] = useState('');
   const [passwordError, setPasswordError] = useState('');
   const [createdOrderId, setCreatedOrderId] = useState('');
+  const [submitting, setSubmitting] = useState(false);
 
-  const { getAvailableLockers, updateLockerStatus } = useLockerStore();
+  const { getAvailableLockers, fetchLockers } = useLockerStore();
   const { createOrder } = useOrderStore();
-  const { rules } = usePricingStore();
-  const { addLog } = useLogStore();
+  const { currentRule, fetchCurrentRule } = usePricingStore();
+
+  useEffect(() => {
+    fetchLockers();
+    fetchCurrentRule();
+  }, []);
 
   const availableLockers = getAvailableLockers();
-  const currentRule = findApplicablePricingRule(rules);
 
   const handleSelectLocker = (locker: Locker) => {
     if (locker.status !== '空闲') return;
@@ -56,32 +58,16 @@ export default function StorePage() {
     setStep('confirm');
   };
 
-  const handleConfirm = () => {
-    if (!selectedLocker) return;
-
-    const pricingSnapshot = {
-      name: currentRule.name,
-      type: currentRule.type,
-      firstHourPrice: currentRule.firstHourPrice,
-      nextHourPrice: currentRule.nextHourPrice,
-      dailyCap: currentRule.dailyCap,
-    };
-
-    const order = createOrder(selectedLocker.id, password, phone, pricingSnapshot);
-    updateLockerStatus(selectedLocker.id, '使用中');
-
-    addLog({
-      actionType: '寄存',
-      lockerId: selectedLocker.id,
-      orderId: order.id,
-      operator: '游客',
-      beforeState: '空闲',
-      afterState: '使用中',
-      remark: `手机号 ${phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}`,
-    });
-
-    setCreatedOrderId(order.id);
-    setStep('success');
+  const handleConfirm = async () => {
+    if (!selectedLocker || submitting) return;
+    setSubmitting(true);
+    try {
+      const order = await createOrder(selectedLocker.id, password, phone);
+      setCreatedOrderId(order.id);
+      setStep('success');
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   return (
@@ -138,12 +124,14 @@ export default function StorePage() {
               className="card p-6"
             >
               <h2 className="text-lg font-bold text-gray-800 mb-4">请选择空闲柜门</h2>
-              <p className="text-gray-500 text-sm mb-6">
-                当前适用 <span className="text-amber-600 font-semibold">{currentRule.name}</span>：
-                首小时 {formatCurrency(currentRule.firstHourPrice)}，
-                续时 {formatCurrency(currentRule.nextHourPrice)}/小时，
-                每日封顶 {formatCurrency(currentRule.dailyCap)}
-              </p>
+              {currentRule && (
+                <p className="text-gray-500 text-sm mb-6">
+                  当前适用 <span className="text-amber-600 font-semibold">{currentRule.name}</span>：
+                  首小时 {formatCurrency(currentRule.firstHourPrice)}，
+                  续时 {formatCurrency(currentRule.nextHourPrice)}/小时，
+                  每日封顶 {formatCurrency(currentRule.dailyCap)}
+                </p>
+              )}
               {availableLockers.length === 0 ? (
                 <div className="text-center py-12 text-gray-400">
                   <Lock className="w-12 h-12 mx-auto mb-4 opacity-50" />
@@ -253,18 +241,22 @@ export default function StorePage() {
                   <span className="font-medium">{phone.replace(/(\d{3})\d{4}(\d{4})/, '$1****$2')}</span>
                 </div>
                 <div className="border-t pt-3 mt-3">
-                  <div className="flex justify-between mb-1">
-                    <span className="text-gray-500">计费规则</span>
-                    <span className="text-amber-600 font-semibold">{currentRule.name}</span>
-                  </div>
-                  <p className="text-sm text-gray-500">
-                    首小时 {formatCurrency(currentRule.firstHourPrice)}，
-                    续时 {formatCurrency(currentRule.nextHourPrice)}/小时，
-                    每日封顶 {formatCurrency(currentRule.dailyCap)}
-                  </p>
-                  <p className="text-xs text-gray-400 mt-1">
-                    不足1小时按1小时计费，超过{formatDuration(currentRule.dailyCap / currentRule.nextHourPrice * 60 || 600)}按封顶计费
-                  </p>
+                  {currentRule && (
+                    <>
+                      <div className="flex justify-between mb-1">
+                        <span className="text-gray-500">计费规则</span>
+                        <span className="text-amber-600 font-semibold">{currentRule.name}</span>
+                      </div>
+                      <p className="text-sm text-gray-500">
+                        首小时 {formatCurrency(currentRule.firstHourPrice)}，
+                        续时 {formatCurrency(currentRule.nextHourPrice)}/小时，
+                        每日封顶 {formatCurrency(currentRule.dailyCap)}
+                      </p>
+                      <p className="text-xs text-gray-400 mt-1">
+                        不足1小时按1小时计费，超过{formatDuration(currentRule.dailyCap / currentRule.nextHourPrice * 60 || 600)}按封顶计费
+                      </p>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -272,8 +264,8 @@ export default function StorePage() {
                 <button onClick={() => setStep('password')} className="btn-outline flex-1">
                   返回修改
                 </button>
-                <button onClick={handleConfirm} className="btn-primary flex-1">
-                  确认寄存
+                <button onClick={handleConfirm} disabled={submitting} className="btn-primary flex-1">
+                  {submitting ? '提交中...' : '确认寄存'}
                 </button>
               </div>
             </motion.div>

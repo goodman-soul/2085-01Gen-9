@@ -1,4 +1,4 @@
-import { useState, useMemo } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import { ScrollText, Search, Filter } from 'lucide-react';
 import Timeline from '@/components/Timeline';
@@ -18,7 +18,7 @@ const allActionTypes: ActionType[] = [
 ];
 
 export default function Logs() {
-  const { logs, filterLogs } = useLogStore();
+  const { logs, fetchLogs } = useLogStore();
 
   const [lockerId, setLockerId] = useState('');
   const [actionType, setActionType] = useState<ActionType | ''>('');
@@ -26,15 +26,19 @@ export default function Logs() {
   const [endDate, setEndDate] = useState('');
   const [operator, setOperator] = useState('');
 
-  const filteredLogs = useMemo(() => {
-    return filterLogs({
+  const loadLogs = useCallback(() => {
+    fetchLogs({
       lockerId: lockerId.trim() || undefined,
       actionType: actionType || undefined,
       startDate: startDate || undefined,
       endDate: endDate || undefined,
       operator: operator.trim() || undefined,
     });
-  }, [lockerId, actionType, startDate, endDate, operator, filterLogs]);
+  }, [fetchLogs, lockerId, actionType, startDate, endDate, operator]);
+
+  useEffect(() => {
+    loadLogs();
+  }, [loadLogs]);
 
   const resetFilters = () => {
     setLockerId('');
@@ -54,11 +58,6 @@ export default function Logs() {
           </h1>
           <p className="text-gray-500 mt-1">
             全流程操作追溯 · 共 <span className="text-forest-600 font-semibold">{logs.length}</span> 条记录
-            {filteredLogs.length !== logs.length && (
-              <span className="text-gray-400 ml-2">
-                (筛选后 {filteredLogs.length} 条)
-              </span>
-            )}
           </p>
         </div>
       </div>
@@ -149,7 +148,7 @@ export default function Logs() {
         transition={{ delay: 0.1 }}
         className="max-h-[calc(100vh-380px)] overflow-auto scrollbar-thin pr-2"
       >
-        <Timeline logs={filteredLogs} />
+        <Timeline logs={logs} />
       </motion.div>
     </div>
   );

@@ -1,3 +1,4 @@
+import { useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Archive, LogIn, KeyRound, Mountain, ShieldCheck, Clock, Coins } from 'lucide-react';
@@ -6,15 +7,19 @@ import StatCard from '@/components/StatCard';
 import { useLockerStore } from '@/store/useLockerStore';
 import { useOrderStore } from '@/store/useOrderStore';
 import { usePricingStore } from '@/store/usePricingStore';
-import { findApplicablePricingRule } from '@/utils/pricing';
 import { formatCurrency } from '@/utils/billing';
 
 export default function VisitorHome() {
   const navigate = useNavigate();
-  const { lockers, getLockersByStatus } = useLockerStore();
-  const { activeOrders, getTodayRevenue } = useOrderStore();
-  const { rules } = usePricingStore();
-  const currentRule = findApplicablePricingRule(rules);
+  const { lockers, getLockersByStatus, fetchLockers } = useLockerStore();
+  const { activeOrders, fetchActiveOrders } = useOrderStore();
+  const { currentRule, fetchCurrentRule } = usePricingStore();
+
+  useEffect(() => {
+    fetchLockers();
+    fetchCurrentRule();
+    fetchActiveOrders();
+  }, []);
 
   const freeCount = getLockersByStatus('空闲').length;
   const usedCount = getLockersByStatus('使用中').length;
@@ -58,13 +63,15 @@ export default function VisitorHome() {
           <StatCard title="空闲可用" value={freeCount} icon={ShieldCheck} color="green" />
           <StatCard title="使用中" value={usedCount} icon={Clock} color="amber" />
           <StatCard title="故障维护" value={faultCount} icon={ShieldCheck} color="red" />
-          <StatCard
-            title={`${currentRule.name}费率`}
-            value={formatCurrency(currentRule.firstHourPrice) + '起'}
-            icon={Coins}
-            color="blue"
-            trend={`首小时 +${formatCurrency(currentRule.nextHourPrice)}/小时 封顶${formatCurrency(currentRule.dailyCap)}/天`}
-          />
+          {currentRule && (
+            <StatCard
+              title={`${currentRule.name}费率`}
+              value={formatCurrency(currentRule.firstHourPrice) + '起'}
+              icon={Coins}
+              color="blue"
+              trend={`首小时 +${formatCurrency(currentRule.nextHourPrice)}/小时 封顶${formatCurrency(currentRule.dailyCap)}/天`}
+            />
+          )}
         </motion.div>
 
         <motion.div

@@ -1,21 +1,19 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plus, Tags, Trash2, ToggleLeft, ToggleRight, Edit2, X, Calendar, Check } from 'lucide-react';
 import { PricingRule, PricingRuleType } from '@/types';
 import { usePricingStore } from '@/store/usePricingStore';
-import { useAuthStore } from '@/store/useAuthStore';
-import { useLogStore } from '@/store/useLogStore';
 import { formatCurrency } from '@/utils/billing';
-import { findApplicablePricingRule } from '@/utils/pricing';
 
 export default function Pricing() {
-  const { rules, addRule, updateRule, deleteRule, toggleRuleActive } = usePricingStore();
-  const { currentAdmin } = useAuthStore();
-  const { addLog } = useLogStore();
+  const { rules, currentRule, fetchRules, fetchCurrentRule, addRule, updateRule, deleteRule, toggleRuleActive } = usePricingStore();
   const [showModal, setShowModal] = useState(false);
   const [editingRule, setEditingRule] = useState<PricingRule | null>(null);
 
-  const currentRule = findApplicablePricingRule(rules);
+  useEffect(() => {
+    fetchRules();
+    fetchCurrentRule();
+  }, [fetchRules, fetchCurrentRule]);
 
   const [form, setForm] = useState({
     name: '',
@@ -62,54 +60,28 @@ export default function Pricing() {
     setShowModal(true);
   };
 
-  const handleSubmit = () => {
+  const handleSubmit = async () => {
     if (!form.name.trim()) return;
     if (form.type !== '基础' && (!form.startDate || !form.endDate)) return;
 
     if (editingRule) {
-      updateRule(editingRule.id, form);
-      addLog({
-        actionType: '价格调整',
-        operator: currentAdmin?.name || '管理员',
-        beforeState: `${editingRule.name}: 首${editingRule.firstHourPrice}续${editingRule.nextHourPrice}`,
-        afterState: `${form.name}: 首${form.firstHourPrice}续${form.nextHourPrice}`,
-        remark: `修改价格规则`,
-      });
+      await updateRule(editingRule.id, form);
     } else {
-      addRule(form);
-      addLog({
-        actionType: '价格调整',
-        operator: currentAdmin?.name || '管理员',
-        afterState: `${form.name}: 首${form.firstHourPrice}续${form.nextHourPrice}`,
-        remark: `新增${form.type}价格规则`,
-      });
+      await addRule(form);
     }
     setShowModal(false);
     resetForm();
   };
 
-  const handleDelete = (rule: PricingRule) => {
+  const handleDelete = async (rule: PricingRule) => {
     if (rule.type === '基础') return;
     if (confirm(`确定删除规则「${rule.name}」吗？`)) {
-      deleteRule(rule.id);
-      addLog({
-        actionType: '价格调整',
-        operator: currentAdmin?.name || '管理员',
-        beforeState: rule.name,
-        remark: '删除价格规则',
-      });
+      await deleteRule(rule.id);
     }
   };
 
-  const handleToggle = (rule: PricingRule) => {
-    toggleRuleActive(rule.id);
-    addLog({
-      actionType: '价格调整',
-      operator: currentAdmin?.name || '管理员',
-      beforeState: `${rule.name} ${rule.isActive ? '启用' : '停用'}`,
-      afterState: `${rule.name} ${rule.isActive ? '停用' : '启用'}`,
-      remark: '切换规则状态',
-    });
+  const handleToggle = async (rule: PricingRule) => {
+    await toggleRuleActive(rule.id);
   };
 
   const typeBadge: Record<PricingRuleType, string> = {
@@ -123,13 +95,15 @@ export default function Pricing() {
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-bold text-gray-800">价格配置</h1>
-          <p className="text-gray-500 mt-1">
-            当前生效：
-            <span className="text-amber-600 font-semibold ml-1">{currentRule.name}</span>
-            <span className="ml-2 text-sm">
-              首小时{formatCurrency(currentRule.firstHourPrice)} + 续{formatCurrency(currentRule.nextHourPrice)}/小时
-            </span>
-          </p>
+          {currentRule && (
+            <p className="text-gray-500 mt-1">
+              当前生效：
+              <span className="text-amber-600 font-semibold ml-1">{currentRule.name}</span>
+              <span className="ml-2 text-sm">
+                首小时{formatCurrency(currentRule.firstHourPrice)} + 续{formatCurrency(currentRule.nextHourPrice)}/小时
+              </span>
+            </p>
+          )}
         </div>
         <button onClick={openCreate} className="btn-primary flex items-center gap-2">
           <Plus className="w-5 h-5" />
@@ -144,7 +118,7 @@ export default function Pricing() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ delay: idx * 0.05 }}
-            className={`card p-5 ${currentRule.id === rule.id ? 'ring-2 ring-amber-400 ring-offset-2' : ''}`}
+            className={`card p-5 ${currentRule?.id === rule.id ? 'ring-2 ring-amber-400 ring-offset-2' : ''}`}
           >
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-4">
@@ -157,7 +131,7 @@ export default function Pricing() {
                     <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${typeBadge[rule.type]}`}>
                       {rule.type}
                     </span>
-                    {currentRule.id === rule.id && (
+                    {currentRule?.id === rule.id && (
                       <span className="px-2 py-0.5 bg-amber-100 text-amber-700 rounded-full text-xs font-semibold flex items-center gap-1">
                         <Check className="w-3 h-3" /> 当前生效
                       </span>

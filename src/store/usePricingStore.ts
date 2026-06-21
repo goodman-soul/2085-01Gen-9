@@ -1,68 +1,62 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { PricingRule } from '@/types';
-import { createBasePricingRule } from '@/utils/pricing';
+import { api } from '@/lib/api';
 
-function createInitialRules(): PricingRule[] {
-  const base = createBasePricingRule();
-  const today = new Date();
-  const peakStart = new Date(today);
-  peakStart.setDate(today.getDate() - 5);
-  const peakEnd = new Date(today);
-  peakEnd.setDate(today.getDate() + 15);
-
-  return [
-    base,
-    {
-      id: 'peak-summer',
-      name: '暑期旺季',
-      type: '旺季',
-      firstHourPrice: 15,
-      nextHourPrice: 8,
-      dailyCap: 80,
-      startDate: peakStart.toISOString().split('T')[0],
-      endDate: peakEnd.toISOString().split('T')[0],
-      isActive: true,
-    },
-  ];
+interface CurrentRule {
+  id: string;
+  name: string;
+  type: string;
+  firstHourPrice: number;
+  nextHourPrice: number;
+  dailyCap: number;
 }
 
 interface PricingState {
   rules: PricingRule[];
-  addRule: (rule: Omit<PricingRule, 'id'>) => void;
-  updateRule: (id: string, updates: Partial<PricingRule>) => void;
-  deleteRule: (id: string) => void;
-  toggleRuleActive: (id: string) => void;
+  currentRule: CurrentRule | null;
+  loading: boolean;
+  fetchRules: () => Promise<void>;
+  fetchCurrentRule: () => Promise<void>;
+  addRule: (rule: Omit<PricingRule, 'id'>) => Promise<string>;
+  updateRule: (id: string, updates: Partial<PricingRule>) => Promise<void>;
+  deleteRule: (id: string) => Promise<void>;
+  toggleRuleActive: (id: string) => Promise<boolean>;
 }
 
-export const usePricingStore = create<PricingState>()(
-  persist(
-    (set, get) => ({
-      rules: createInitialRules(),
+export const usePricingStore = create<PricingState>()(() => ({
+  rules: [],
+  currentRule: null,
+  loading: false,
 
-      addRule: (rule) => {
-        const newRule: PricingRule = {
-          ...rule,
-          id: `rule-${Date.now()}`,
-        };
-        set((state) => ({ rules: [...state.rules, newRule] }));
-      },
+  fetchRules: async () => {
+    const rules = await api.get<PricingRule[]>('/pricing');
+    usePricingStore.setState({ rules });
+  },
 
-      updateRule: (id, updates) =>
-        set((state) => ({
-          rules: state.rules.map((r) => (r.id === id ? { ...r, ...updates } : r)),
-        })),
+  fetchCurrentRule: async () => {
+    const currentRule = await api.get<CurrentRule>('/pricing/current');
+    usePricingStore.setState({ currentRule });
+  },
 
-      deleteRule: (id) => {
-        if (get().rules.find((r) => r.id === id)?.type === '基础') return;
-        set((state) => ({ rules: state.rules.filter((r) => r.id !== id) }));
-      },
+  addRule: async (rule) => {
+    const { id } = await api.post<{ id: string }>('/pricing', rule);
+    await usePricingStore.getState().fetchRules();
+    return id;
+  },
 
-      toggleRuleActive: (id) =>
-        set((state) => ({
-          rules: state.rules.map((r) => (r.id === id ? { ...r, isActive: !r.isActive } : r)),
-        })),
-    }),
-    { name: 'pricing-store' }
-  )
-);
+  updateRule: async (id, updates) => {
+    await api.patch(`/pricing/${id}`, updates);
+    await usePricingStore.getState().fetchRules();
+  },
+
+  deleteRule: async (id) => {
+    await api.delete(`/pricing/${id}`);
+    await usePricingStore.getState().fetchRules();
+  },
+
+  toggleRuleActive: async (id) => {
+    const { isActive } = await api.patch<{ ok: boolean; isActive: boolean }>(`/pricing/${id}/toggle`);
+    await usePricingStore.getState().fetchRules();
+    return isActive;
+  },
+}));

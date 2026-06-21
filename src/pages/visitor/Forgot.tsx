@@ -4,7 +4,6 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Check, KeyRound, Mountain, ShieldCheck } from 'lucide-react';
 import PasswordInput from '@/components/PasswordInput';
 import { useOrderStore } from '@/store/useOrderStore';
-import { useLogStore } from '@/store/useLogStore';
 
 type Step = 'verify' | 'reset' | 'success';
 
@@ -20,11 +19,11 @@ export default function ForgotPage() {
   const [error, setError] = useState('');
   const [successLocker, setSuccessLocker] = useState('');
   const [countdown, setCountdown] = useState(0);
+  const [loading, setLoading] = useState(false);
 
   const { getActiveOrderByLocker, updateOrderPassword } = useOrderStore();
-  const { addLog } = useLogStore();
 
-  const handleSendCode = () => {
+  const handleSendCode = async () => {
     setError('');
     if (!lockerId.trim()) {
       setError('请输入柜门号');
@@ -34,28 +33,32 @@ export default function ForgotPage() {
       setError('请输入正确的11位手机号');
       return;
     }
-    const order = getActiveOrderByLocker(lockerId.toUpperCase());
-    if (!order) {
-      setError('该柜门当前没有寄存订单');
-      return;
+    try {
+      const order = await getActiveOrderByLocker(lockerId.toUpperCase());
+      if (!order) {
+        setError('该柜门当前没有寄存订单');
+        return;
+      }
+      if (order.phone !== phone) {
+        setError('手机号与寄存时不一致');
+        return;
+      }
+      const generated = String(Math.floor(100000 + Math.random() * 900000));
+      setSentCode(generated);
+      setCountdown(60);
+      const timer = setInterval(() => {
+        setCountdown((c) => {
+          if (c <= 1) {
+            clearInterval(timer);
+            return 0;
+          }
+          return c - 1;
+        });
+      }, 1000);
+      alert(`【演示模式】验证码已发送：${generated}`);
+    } catch {
+      setError('查询订单失败，请稍后重试');
     }
-    if (order.phone !== phone) {
-      setError('手机号与寄存时不一致');
-      return;
-    }
-    const generated = String(Math.floor(100000 + Math.random() * 900000));
-    setSentCode(generated);
-    setCountdown(60);
-    const timer = setInterval(() => {
-      setCountdown((c) => {
-        if (c <= 1) {
-          clearInterval(timer);
-          return 0;
-        }
-        return c - 1;
-      });
-    }, 1000);
-    alert(`【演示模式】验证码已发送：${generated}`);
   };
 
   const handleVerifyCode = () => {
@@ -67,7 +70,7 @@ export default function ForgotPage() {
     setStep('reset');
   };
 
-  const handleResetPassword = () => {
+  const handleResetPassword = async () => {
     setError('');
     if (newPassword.length !== 6) {
       setError('请输入6位数字密码');
@@ -77,18 +80,18 @@ export default function ForgotPage() {
       setError('两次密码输入不一致');
       return;
     }
-    const order = getActiveOrderByLocker(lockerId.toUpperCase());
-    if (order) {
-      updateOrderPassword(order.id, newPassword);
-      addLog({
-        actionType: '密码重置',
-        lockerId: order.lockerId,
-        orderId: order.id,
-        operator: '游客(自助)',
-        remark: '通过手机验证码重置密码',
-      });
-      setSuccessLocker(order.lockerId);
-      setStep('success');
+    setLoading(true);
+    try {
+      const order = await getActiveOrderByLocker(lockerId.toUpperCase());
+      if (order) {
+        await updateOrderPassword(order.id, newPassword);
+        setSuccessLocker(order.lockerId);
+        setStep('success');
+      }
+    } catch {
+      setError('密码重置失败，请稍后重试');
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -239,8 +242,8 @@ export default function ForgotPage() {
                   <button onClick={() => setStep('verify')} className="btn-outline flex-1">
                     返回
                   </button>
-                  <button onClick={handleResetPassword} className="btn-primary flex-1">
-                    确认重置
+                  <button onClick={handleResetPassword} disabled={loading} className="btn-primary flex-1">
+                    {loading ? '重置中...' : '确认重置'}
                   </button>
                 </div>
               </div>

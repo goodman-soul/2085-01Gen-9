@@ -1,92 +1,66 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
-import { Order, PricingSnapshot } from '@/types';
-import { generateOrderId, calculateBilling } from '@/utils/billing';
+import { Order, PricingSnapshot, BillingDetail } from '@/types';
+import { api } from '@/lib/api';
 
 interface OrderState {
-  orders: Order[];
   activeOrders: Order[];
-  createOrder: (lockerId: string, password: string, phone: string, pricingSnapshot: PricingSnapshot) => Order;
-  completeOrder: (orderId: string) => { durationMinutes: number; totalAmount: number } | null;
-  getActiveOrderByLocker: (lockerId: string) => Order | undefined;
-  getOrderById: (id: string) => Order | undefined;
-  updateOrderPassword: (orderId: string, newPassword: string) => void;
-  getTodayOrders: () => Order[];
-  getTodayRevenue: () => number;
+  todayOrders: Order[];
+  todayRevenue: number;
+  loading: boolean;
+  fetchActiveOrders: () => Promise<void>;
+  fetchTodayOrders: () => Promise<void>;
+  fetchTodayRevenue: () => Promise<void>;
+  createOrder: (lockerId: string, password: string, phone: string, pricingSnapshot: PricingSnapshot) => Promise<{ id: string; lockerId: string; startTime: string }>;
+  completeOrder: (orderId: string, reason?: string) => Promise<{ durationMinutes: number; totalAmount: number; billing: BillingDetail }>;
+  verifyAndBill: (lockerId: string, password: string) => Promise<{ order: Order; billing: BillingDetail }>;
+  getActiveOrderByLocker: (lockerId: string) => Promise<Order | null>;
+  updateOrderPassword: (orderId: string, newPassword: string) => Promise<void>;
 }
 
-export const useOrderStore = create<OrderState>()(
-  persist(
-    (set, get) => ({
-      orders: [],
-      get activeOrders() {
-        return get().orders.filter((o) => o.status === '进行中');
-      },
+export const useOrderStore = create<OrderState>()(() => ({
+  activeOrders: [],
+  todayOrders: [],
+  todayRevenue: 0,
+  loading: false,
 
-      createOrder: (lockerId, password, phone, pricingSnapshot) => {
-        const order: Order = {
-          id: generateOrderId(),
-          lockerId,
-          password,
-          phone,
-          startTime: new Date().toISOString(),
-          status: '进行中',
-          pricingSnapshot,
-        };
-        set((state) => ({ orders: [order, ...state.orders] }));
-        return order;
-      },
+  fetchActiveOrders: async () => {
+    const activeOrders = await api.get<Order[]>('/orders/active');
+    useOrderStore.setState({ activeOrders });
+  },
 
-      completeOrder: (orderId) => {
-        const order = get().orders.find((o) => o.id === orderId);
-        if (!order || order.status !== '进行中') return null;
+  fetchTodayOrders: async () => {
+    const todayOrders = await api.get<Order[]>('/orders/today');
+    useOrderStore.setState({ todayOrders });
+  },
 
-        const endTime = new Date();
-        const billing = calculateBilling(
-          new Date(order.startTime),
-          endTime,
-          order.pricingSnapshot
-        );
+  fetchTodayRevenue: async () => {
+    const { revenue } = await api.get<{ revenue: number }>('/orders/today/revenue');
+    useOrderStore.setState({ todayRevenue: revenue });
+  },
 
-        set((state) => ({
-          orders: state.orders.map((o) =>
-            o.id === orderId
-              ? {
-                  ...o,
-                  endTime: endTime.toISOString(),
-                  durationMinutes: billing.durationMinutes,
-                  totalAmount: billing.totalAmount,
-                  status: '已完成',
-                }
-              : o
-          ),
-        }));
+  createOrder: async (lockerId, password, phone) => {
+    return api.post('/orders', { lockerId, password, phone });
+  },
 
-        return { durationMinutes: billing.durationMinutes, totalAmount: billing.totalAmount };
-      },
+  completeOrder: async (orderId, reason) => {
+    const result = await api.post<{
+      id: string;
+      durationMinutes: number;
+      totalAmount: number;
+      billing: BillingDetail;
+    }>(`/orders/${orderId}/complete`, { reason });
+    return result;
+  },
 
-      getActiveOrderByLocker: (lockerId) =>
-        get().orders.find((o) => o.lockerId === lockerId && o.status === '进行中'),
+  verifyAndBill: async (lockerId, password) => {
+    return api.post<{ order: Order; billing: BillingDetail }>('/orders/verify', { lockerId, password });
+  },
 
-      getOrderById: (id) => get().orders.find((o) => o.id === id),
+  getActiveOrderByLocker: async (lockerId) => {
+    return api.get<Order | null>(`/orders/active/${lockerId}`);
+  },
 
-      updateOrderPassword: (orderId, newPassword) =>
-        set((state) => ({
-          orders: state.orders.map((o) => (o.id === orderId ? { ...o, password: newPassword } : o)),
-        })),
-
-      getTodayOrders: () => {
-        const today = new Date().toDateString();
-        return get().orders.filter((o) => new Date(o.startTime).toDateString() === today);
-      },
-
-      getTodayRevenue: () => {
-        return get()
-          .getTodayOrders()
-          .filter((o) => o.status === '已完成')
-          .reduce((sum, o) => sum + (o.totalAmount || 0), 0);
-      },
-    }),
-    { name: 'order-store' }
-  )
-);
+  updateOrderPassword: async (orderId, newPassword) => {
+    await api.patch(`/orders/${orderId}/password`, { newPassword });
+  },
+}));

@@ -1,27 +1,24 @@
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { UserCheck, Mountain, Lock, Search, AlertCircle, Check } from 'lucide-react';
+import { Order } from '@/types';
 import { useLockerStore } from '@/store/useLockerStore';
 import { useOrderStore } from '@/store/useOrderStore';
-import { useAuthStore } from '@/store/useAuthStore';
-import { useLogStore } from '@/store/useLogStore';
-import { calculateBilling, formatCurrency, formatDuration } from '@/utils/billing';
+import { formatCurrency, formatDuration, calculateBilling } from '@/utils/billing';
 import { format } from 'date-fns';
 
 export default function ManualPickup() {
   const { getLocker } = useLockerStore();
   const { getActiveOrderByLocker, completeOrder } = useOrderStore();
-  const { currentAdmin } = useAuthStore();
-  const { addLog } = useLogStore();
 
   const [lockerId, setLockerId] = useState('');
   const [reason, setReason] = useState('');
   const [searched, setSearched] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState(false);
+  const [order, setOrder] = useState<Order | null>(null);
   const [, setTick] = useState(0);
 
-  const order = lockerId ? getActiveOrderByLocker(lockerId.toUpperCase()) : null;
   const locker = lockerId ? getLocker(lockerId.toUpperCase()) : null;
 
   useEffect(() => {
@@ -31,7 +28,7 @@ export default function ManualPickup() {
     }
   }, [searched, order]);
 
-  const handleSearch = () => {
+  const handleSearch = async () => {
     setError('');
     setSuccess(false);
     if (!lockerId.trim()) {
@@ -42,43 +39,40 @@ export default function ManualPickup() {
       setError('柜门不存在');
       return;
     }
-    if (!order) {
+    const found = await getActiveOrderByLocker(lockerId.toUpperCase());
+    if (!found) {
       setError('该柜门当前没有寄存订单');
       return;
     }
+    setOrder(found);
     setSearched(true);
   };
 
-  const handleManualPickup = () => {
+  const handleManualPickup = async () => {
     if (!order || !reason.trim()) {
       setError('请填写代取原因');
       return;
     }
 
-    const billing = calculateBilling(
-      new Date(order.startTime),
-      new Date(),
-      order.pricingSnapshot
-    );
-    const result = completeOrder(order.id);
-
-    if (result) {
-      addLog({
-        actionType: '人工代取',
-        lockerId: order.lockerId,
-        orderId: order.id,
-        operator: currentAdmin?.name || '管理员',
-        beforeState: '使用中',
-        afterState: '空闲',
-        remark: `${reason} | 时长${formatDuration(result.durationMinutes)}，费用${formatCurrency(result.totalAmount)}`,
-      });
+    try {
+      await completeOrder(order.id, reason);
       setSuccess(true);
+    } catch {
+      setError('操作失败，请重试');
     }
   };
 
   const billing = order
     ? calculateBilling(new Date(order.startTime), new Date(), order.pricingSnapshot)
     : null;
+
+  const resetState = () => {
+    setSearched(false);
+    setSuccess(false);
+    setLockerId('');
+    setReason('');
+    setOrder(null);
+  };
 
   return (
     <div className="space-y-6 max-w-3xl mx-auto">
@@ -110,12 +104,7 @@ export default function ManualPickup() {
               <h2 className="text-2xl font-bold text-gray-800 mb-2">人工代取完成</h2>
               <p className="text-gray-500 mb-8">柜门已开启，操作已记录到日志</p>
               <button
-                onClick={() => {
-                  setSearched(false);
-                  setSuccess(false);
-                  setLockerId('');
-                  setReason('');
-                }}
+                onClick={resetState}
                 className="btn-primary"
               >
                 继续代取
@@ -238,11 +227,7 @@ export default function ManualPickup() {
 
             <div className="flex gap-4">
               <button
-                onClick={() => {
-                  setSearched(false);
-                  setLockerId('');
-                  setReason('');
-                }}
+                onClick={resetState}
                 className="btn-outline flex-1"
               >
                 返回查询

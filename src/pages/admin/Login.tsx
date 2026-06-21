@@ -3,26 +3,19 @@ import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { Mountain, Lock, User } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
-import { useLogStore } from '@/store/useLogStore';
 
 export default function AdminLogin() {
   const navigate = useNavigate();
   const { login } = useAuthStore();
-  const { addLog } = useLogStore();
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
 
-  const handleLogin = (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    const success = login(username.trim(), password);
+    const success = await login(username.trim(), password);
     if (success) {
-      addLog({
-        actionType: '管理员登录',
-        operator: username,
-        remark: '后台管理系统登录',
-      });
       navigate('/admin/dashboard');
     } else {
       setError('用户名或密码错误');

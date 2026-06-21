@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { Archive, AlertTriangle, Coins, TrendingUp, Clock, Calendar } from 'lucide-react';
 import StatCard from '@/components/StatCard';
@@ -6,23 +6,28 @@ import LockerGrid from '@/components/LockerGrid';
 import { useLockerStore } from '@/store/useLockerStore';
 import { useOrderStore } from '@/store/useOrderStore';
 import { usePricingStore } from '@/store/usePricingStore';
-import { findApplicablePricingRule } from '@/utils/pricing';
 import { formatCurrency, formatDuration } from '@/utils/billing';
 import { format } from 'date-fns';
 import { zhCN } from 'date-fns/locale';
 
 export default function Dashboard() {
-  const { lockers, getLockersByStatus } = useLockerStore();
-  const { getTodayOrders, getTodayRevenue, activeOrders } = useOrderStore();
-  const { rules } = usePricingStore();
-  const currentRule = findApplicablePricingRule(rules);
+  const { lockers, getLockersByStatus, fetchLockers } = useLockerStore();
+  const { activeOrders, todayOrders, todayRevenue, fetchActiveOrders, fetchTodayOrders, fetchTodayRevenue } = useOrderStore();
+  const { currentRule, fetchCurrentRule } = usePricingStore();
+
+  useEffect(() => {
+    fetchLockers();
+    fetchActiveOrders();
+    fetchTodayOrders();
+    fetchTodayRevenue();
+    fetchCurrentRule();
+  }, [fetchLockers, fetchActiveOrders, fetchTodayOrders, fetchTodayRevenue, fetchCurrentRule]);
 
   const freeCount = getLockersByStatus('空闲').length;
   const usedCount = getLockersByStatus('使用中').length;
   const faultCount = getLockersByStatus('故障').length;
   const totalCount = lockers.length;
   const usageRate = totalCount > 0 ? Math.round((usedCount / (totalCount - faultCount)) * 100) : 0;
-  const todayOrders = getTodayOrders();
 
   const recentOrders = useMemo(() => {
     return todayOrders.slice(0, 5);
@@ -41,16 +46,18 @@ export default function Dashboard() {
             {format(new Date(), 'yyyy年MM月dd日 EEEE', { locale: zhCN })}
           </p>
         </div>
-        <div className="px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl">
-          <span className="text-amber-700 font-medium text-sm">
-            当前费率：{currentRule.name} - 首小时{formatCurrency(currentRule.firstHourPrice)}
-          </span>
-        </div>
+        {currentRule && (
+          <div className="px-4 py-2 bg-amber-50 border border-amber-200 rounded-xl">
+            <span className="text-amber-700 font-medium text-sm">
+              当前费率：{currentRule.name} - 首小时{formatCurrency(currentRule.firstHourPrice)}
+            </span>
+          </div>
+        )}
       </motion.div>
 
       <div className="grid grid-cols-4 gap-5">
         <StatCard title="今日订单" value={todayOrders.length} icon={Archive} color="green" />
-        <StatCard title="今日收入" value={formatCurrency(getTodayRevenue())} icon={Coins} color="amber" />
+        <StatCard title="今日收入" value={formatCurrency(todayRevenue)} icon={Coins} color="amber" />
         <StatCard title="当前在柜" value={usedCount} icon={Clock} color="blue" trend={`使用率 ${usageRate}%`} />
         <StatCard title="故障柜门" value={faultCount} icon={AlertTriangle} color="red" trend={`共 ${totalCount} 个柜`} />
       </div>

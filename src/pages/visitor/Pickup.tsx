@@ -4,11 +4,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { ArrowLeft, Check, Mountain, Lock } from 'lucide-react';
 import PasswordInput from '@/components/PasswordInput';
 import FeeBreakdown from '@/components/FeeBreakdown';
-import { Order } from '@/types';
+import { Order, BillingDetail } from '@/types';
 import { useOrderStore } from '@/store/useOrderStore';
-import { useLockerStore } from '@/store/useLockerStore';
-import { useLogStore } from '@/store/useLogStore';
-import { calculateBilling, formatDuration, formatCurrency } from '@/utils/billing';
+import { formatDuration, formatCurrency } from '@/utils/billing';
 
 type Step = 'input' | 'confirm' | 'success';
 
@@ -18,13 +16,14 @@ export default function PickupPage() {
   const [lockerId, setLockerId] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [verifying, setVerifying] = useState(false);
+  const [paying, setPaying] = useState(false);
   const [order, setOrder] = useState<Order | null>(null);
-  const [billingResult, setBillingResult] = useState<ReturnType<typeof calculateBilling> | null>(null);
+  const [billingResult, setBillingResult] = useState<BillingDetail | null>(null);
+  const [completedBilling, setCompletedBilling] = useState<BillingDetail | null>(null);
   const [, setTick] = useState(0);
 
-  const { getActiveOrderByLocker, completeOrder } = useOrderStore();
-  const { updateLockerStatus } = useLockerStore();
-  const { addLog } = useLogStore();
+  const { verifyAndBill, completeOrder } = useOrderStore();
 
   useEffect(() => {
     if (step === 'confirm' && order) {
@@ -33,7 +32,7 @@ export default function PickupPage() {
     }
   }, [step, order]);
 
-  const handleVerify = () => {
+  const handleVerify = async () => {
     setError('');
     if (!lockerId.trim()) {
       setError('请输入柜门号');
@@ -44,53 +43,36 @@ export default function PickupPage() {
       return;
     }
 
-    const foundOrder = getActiveOrderByLocker(lockerId.toUpperCase());
-    if (!foundOrder) {
-      setError('该柜门当前没有寄存订单');
-      return;
+    setVerifying(true);
+    try {
+      const { order: foundOrder, billing } = await verifyAndBill(lockerId.toUpperCase(), password);
+      setOrder(foundOrder);
+      setBillingResult(billing);
+      setStep('confirm');
+    } catch {
+      setError('柜门号或密码错误，请重试或点击忘记密码');
+    } finally {
+      setVerifying(false);
     }
-    if (foundOrder.password !== password) {
-      setError('密码错误，请重试或点击忘记密码');
-      return;
-    }
-
-    const billing = calculateBilling(
-      new Date(foundOrder.startTime),
-      new Date(),
-      foundOrder.pricingSnapshot
-    );
-    setOrder(foundOrder);
-    setBillingResult(billing);
-    setStep('confirm');
   };
 
   useEffect(() => {
     if (step === 'confirm' && order) {
-      const billing = calculateBilling(
-        new Date(order.startTime),
-        new Date(),
-        order.pricingSnapshot
-      );
-      setBillingResult(billing);
+      verifyAndBill(order.lockerId, order.password).then(({ billing }) => {
+        setBillingResult(billing);
+      }).catch(() => {});
     }
   });
 
-  const handleConfirmPay = () => {
-    if (!order || !billingResult) return;
-
-    const result = completeOrder(order.id);
-    if (result) {
-      updateLockerStatus(order.lockerId, '空闲');
-      addLog({
-        actionType: '取件',
-        lockerId: order.lockerId,
-        orderId: order.id,
-        operator: '游客',
-        beforeState: '使用中',
-        afterState: '空闲',
-        remark: `时长 ${formatDuration(result.durationMinutes)}，费用 ${formatCurrency(result.totalAmount)}`,
-      });
+  const handleConfirmPay = async () => {
+    if (!order || paying) return;
+    setPaying(true);
+    try {
+      const result = await completeOrder(order.id);
+      setCompletedBilling(result.billing);
       setStep('success');
+    } finally {
+      setPaying(false);
     }
   };
 
@@ -157,8 +139,8 @@ export default function PickupPage() {
                   </motion.p>
                 )}
 
-                <button onClick={handleVerify} className="btn-accent w-full">
-                  查询订单
+                <button onClick={handleVerify} disabled={verifying} className="btn-accent w-full">
+                  {verifying ? '查询中...' : '查询订单'}
                 </button>
 
                 <Link
@@ -225,15 +207,16 @@ export default function PickupPage() {
                   whileHover={{ scale: 1.02 }}
                   whileTap={{ scale: 0.98 }}
                   onClick={handleConfirmPay}
+                  disabled={paying}
                   className="btn-accent flex-1 text-lg animate-pulse-slow"
                 >
-                  确认支付 {formatCurrency(billingResult.totalAmount)}
+                  {paying ? '支付中...' : `确认支付 ${formatCurrency(billingResult.totalAmount)}`}
                 </motion.button>
               </div>
             </motion.div>
           )}
 
-          {step === 'success' && order && billingResult && (
+          {step === 'success' && order && completedBilling && (
             <motion.div
               key="success"
               initial={{ opacity: 0, scale: 0.9 }}
@@ -258,12 +241,12 @@ export default function PickupPage() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-gray-500">使用时长</span>
-                  <span className="font-medium">{formatDuration(billingResult.durationMinutes)}</span>
+                  <span className="font-medium">{formatDuration(completedBilling.durationMinutes)}</span>
                 </div>
                 <div className="flex justify-between border-t pt-2 mt-2">
                   <span className="text-gray-500">支付金额</span>
                   <span className="font-black text-amber-600 text-xl">
-                    {formatCurrency(billingResult.totalAmount)}
+                    {formatCurrency(completedBilling.totalAmount)}
                   </span>
                 </div>
               </div>

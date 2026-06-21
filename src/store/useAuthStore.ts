@@ -1,39 +1,44 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { Admin } from '@/types';
+import { api } from '@/lib/api';
 
 interface AuthState {
   currentAdmin: Admin | null;
-  login: (username: string, password: string) => boolean;
-  logout: () => void;
+  login: (username: string, password: string) => Promise<boolean>;
+  logout: () => Promise<void>;
+  checkAuth: () => Promise<void>;
   isAuthenticated: () => boolean;
 }
 
-const defaultAdmin: Admin = {
-  id: 'admin-1',
-  username: 'admin',
-  password: 'admin123',
-  name: '系统管理员',
-  role: '超级管理员',
-};
+export const useAuthStore = create<AuthState>()((set, get) => ({
+  currentAdmin: null,
 
-export const useAuthStore = create<AuthState>()(
-  persist(
-    (set, get) => ({
-      currentAdmin: null,
+  login: async (username, password) => {
+    try {
+      const admin = await api.post<Admin>('/auth/login', { username, password });
+      set({ currentAdmin: admin });
+      return true;
+    } catch {
+      return false;
+    }
+  },
 
-      login: (username, password) => {
-        if (username === defaultAdmin.username && password === defaultAdmin.password) {
-          set({ currentAdmin: defaultAdmin });
-          return true;
-        }
-        return false;
-      },
+  logout: async () => {
+    try {
+      await api.post('/auth/logout');
+    } finally {
+      set({ currentAdmin: null });
+    }
+  },
 
-      logout: () => set({ currentAdmin: null }),
+  checkAuth: async () => {
+    try {
+      const admin = await api.get<Admin>('/auth/me');
+      set({ currentAdmin: admin });
+    } catch {
+      set({ currentAdmin: null });
+    }
+  },
 
-      isAuthenticated: () => get().currentAdmin !== null,
-    }),
-    { name: 'auth-store' }
-  )
-);
+  isAuthenticated: () => get().currentAdmin !== null,
+}));

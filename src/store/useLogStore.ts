@@ -1,45 +1,32 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
 import { LogEntry, ActionType } from '@/types';
-import { generateLogId } from '@/utils/billing';
+import { api } from '@/lib/api';
 
 interface LogState {
   logs: LogEntry[];
-  addLog: (entry: Omit<LogEntry, 'id' | 'timestamp'>) => void;
-  filterLogs: (filters: {
+  loading: boolean;
+  fetchLogs: (filters?: {
     lockerId?: string;
     actionType?: ActionType;
     startDate?: string;
     endDate?: string;
     operator?: string;
-  }) => LogEntry[];
+  }) => Promise<void>;
 }
 
-export const useLogStore = create<LogState>()(
-  persist(
-    (set, get) => ({
-      logs: [],
+export const useLogStore = create<LogState>()(() => ({
+  logs: [],
+  loading: false,
 
-      addLog: (entry) => {
-        const log: LogEntry = {
-          ...entry,
-          id: generateLogId(),
-          timestamp: new Date().toISOString(),
-        };
-        set((state) => ({ logs: [log, ...state.logs] }));
-      },
-
-      filterLogs: ({ lockerId, actionType, startDate, endDate, operator }) => {
-        return get().logs.filter((log) => {
-          if (lockerId && log.lockerId !== lockerId) return false;
-          if (actionType && log.actionType !== actionType) return false;
-          if (operator && !log.operator.includes(operator)) return false;
-          if (startDate && new Date(log.timestamp) < new Date(startDate)) return false;
-          if (endDate && new Date(log.timestamp) > new Date(endDate + 'T23:59:59')) return false;
-          return true;
-        });
-      },
-    }),
-    { name: 'log-store' }
-  )
-);
+  fetchLogs: async (filters) => {
+    const params = new URLSearchParams();
+    if (filters?.lockerId) params.set('lockerId', filters.lockerId);
+    if (filters?.actionType) params.set('actionType', filters.actionType);
+    if (filters?.startDate) params.set('startDate', filters.startDate);
+    if (filters?.endDate) params.set('endDate', filters.endDate);
+    if (filters?.operator) params.set('operator', filters.operator);
+    const qs = params.toString();
+    const logs = await api.get<LogEntry[]>(`/logs${qs ? `?${qs}` : ''}`);
+    useLogStore.setState({ logs });
+  },
+}));

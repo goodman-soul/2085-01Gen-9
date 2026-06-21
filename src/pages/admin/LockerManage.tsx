@@ -1,20 +1,29 @@
-import { useState } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertTriangle, CheckCircle2, Search, Wrench, Lock, Unlock, ChevronDown, ChevronUp } from 'lucide-react';
 import { LockerStatus } from '@/types';
 import { useLockerStore } from '@/store/useLockerStore';
 import { useOrderStore } from '@/store/useOrderStore';
-import { useAuthStore } from '@/store/useAuthStore';
-import { useLogStore } from '@/store/useLogStore';
 import { formatCurrency, formatDuration } from '@/utils/billing';
 import { format } from 'date-fns';
 
 export default function LockerManage() {
-  const { lockers, updateLockerStatus } = useLockerStore();
-  const { getActiveOrderByLocker } = useOrderStore();
-  const { currentAdmin } = useAuthStore();
-  const { addLog } = useLogStore();
+  const { lockers, fetchLockers, updateLockerStatus } = useLockerStore();
+  const { activeOrders, fetchActiveOrders } = useOrderStore();
+
+  useEffect(() => {
+    fetchLockers();
+    fetchActiveOrders();
+  }, [fetchLockers, fetchActiveOrders]);
+
+  const orderMap = useMemo(() => {
+    const map = new Map<string, (typeof activeOrders)[number]>();
+    for (const order of activeOrders) {
+      map.set(order.lockerId, order);
+    }
+    return map;
+  }, [activeOrders]);
 
   const [search, setSearch] = useState('');
   const [filterStatus, setFilterStatus] = useState<LockerStatus | '全部'>('全部');
@@ -37,53 +46,19 @@ export default function LockerManage() {
     return map[status];
   };
 
-  const handleMarkFault = () => {
+  const handleMarkFault = async () => {
     if (!faultModalLocker) return;
-    const locker = lockers.find((l) => l.id === faultModalLocker);
-    if (!locker) return;
-
-    const before = locker.status;
-    updateLockerStatus(faultModalLocker, '故障', faultRemark);
-    addLog({
-      actionType: '故障标记',
-      lockerId: faultModalLocker,
-      operator: currentAdmin?.name || '管理员',
-      beforeState: before,
-      afterState: '故障',
-      remark: faultRemark || '无备注',
-    });
+    await updateLockerStatus(faultModalLocker, '故障', faultRemark);
     setFaultModalLocker(null);
     setFaultRemark('');
   };
 
-  const handleClearFault = (lockerId: string) => {
-    const locker = lockers.find((l) => l.id === lockerId);
-    if (!locker) return;
-    const before = locker.status;
-    updateLockerStatus(lockerId, '空闲');
-    addLog({
-      actionType: '故障解除',
-      lockerId,
-      operator: currentAdmin?.name || '管理员',
-      beforeState: before,
-      afterState: '空闲',
-      remark: '故障已修复',
-    });
+  const handleClearFault = async (lockerId: string) => {
+    await updateLockerStatus(lockerId, '空闲');
   };
 
-  const handleForceFree = (lockerId: string) => {
-    const locker = lockers.find((l) => l.id === lockerId);
-    if (!locker) return;
-    const before = locker.status;
-    updateLockerStatus(lockerId, '空闲');
-    addLog({
-      actionType: '柜门状态变更',
-      lockerId,
-      operator: currentAdmin?.name || '管理员',
-      beforeState: before,
-      afterState: '空闲',
-      remark: '管理员强制释放',
-    });
+  const handleForceFree = async (lockerId: string) => {
+    await updateLockerStatus(lockerId, '空闲');
     setExpandedId(null);
   };
 
@@ -134,7 +109,7 @@ export default function LockerManage() {
           </thead>
           <tbody>
             {filteredLockers.map((locker, idx) => {
-              const order = getActiveOrderByLocker(locker.id);
+              const order = orderMap.get(locker.id);
               const isExpanded = expandedId === locker.id;
               return (
                 <motion.tr
@@ -227,7 +202,7 @@ export default function LockerManage() {
 
         <AnimatePresence>
           {expandedId && (() => {
-            const order = getActiveOrderByLocker(expandedId);
+            const order = orderMap.get(expandedId);
             if (!order) return null;
             const mins = Math.floor((Date.now() - new Date(order.startTime).getTime()) / 60000);
             return (
